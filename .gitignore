@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Données et artefacts : jamais dans git (régénérables, volumineux, parfois sensibles)
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+mlflow.db
+mlruns/
+
+# Secrets
+.env
