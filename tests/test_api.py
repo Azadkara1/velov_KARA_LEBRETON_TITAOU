@@ -23,3 +23,34 @@ def test_predict_valid(client, valid_payload):
 def test_predict_rejects_bikes_above_capacity(client, valid_payload):
     r = client.post("/v1/predict", json={**valid_payload, "bikes_available": 25})
     assert r.status_code == 422
+
+
+def test_health_ok_and_ready_503_without_model(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from velov.api.main import app
+
+    monkeypatch.setenv("MODEL_DIR", str(tmp_path))  # dossier vide : pas de modèle
+    with TestClient(app) as c:
+        assert c.get("/health").status_code == 200
+        assert c.get("/ready").status_code == 503
+
+
+def test_ready_returns_model_version(client):
+    r = client.get("/ready")
+    assert r.status_code == 200
+    assert r.json()["model_version"] == "0.0.0-test"
+
+
+def test_unknown_field_rejected(client, valid_payload):
+    assert client.post("/v1/predict", json={**valid_payload, "foo": 1}).status_code == 422
+
+
+def test_timestamp_without_timezone_rejected(client, valid_payload):
+    r = client.post("/v1/predict", json={**valid_payload, "timestamp": "2026-10-06T08:00:00"})
+    assert r.status_code == 422
+
+
+def test_prediction_within_capacity(client, valid_payload):
+    r = client.post("/v1/predict", json=valid_payload)
+    assert 0 <= r.json()["predicted_bikes"] <= valid_payload["capacity"]
