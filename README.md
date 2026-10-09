@@ -56,8 +56,12 @@ Le modèle est embarqué dans l'image : il faut l'entraîner **avant** le build.
 python -m velov.data && python -m velov.train     # crée models/model.joblib + metadata.json
 cp .env.example .env
 
-docker build -t velov-api:0.1.0 .
-docker run -d --name vt -p 8000:8000 --env-file .env velov-api:0.1.0
+# Tags : version du package (pyproject.toml) + commit court, repris en labels OCI
+VERSION=1.0.0
+GIT_SHA=$(git rev-parse --short HEAD)
+docker build --build-arg VERSION=$VERSION --build-arg GIT_SHA=$GIT_SHA \
+  -t velov-api:$VERSION -t velov-api:$GIT_SHA .
+docker run -d --name vt -p 8000:8000 --env-file .env velov-api:$VERSION
 
 docker ps                                  # STATUS doit passer à (healthy)
 curl http://localhost:8000/health          # le process répond
@@ -67,6 +71,13 @@ curl -X POST http://localhost:8000/v1/predict   -H "Content-Type: application/js
 
 docker logs vt                             # lire ce que dit l'application
 docker stop vt && docker rm vt             # arrêter
+```
+
+Retrouver la version et le commit d'une image :
+
+```bash
+docker image ls velov-api
+docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' velov-api:1.0.0
 ```
 
 En cas de problème, méthode dans l'ordre : `docker ps -a`, `docker logs`, `docker exec`, `docker inspect`.

@@ -30,6 +30,13 @@ COPY --from=builder /opt/venv /opt/venv
 COPY models/ models/
 USER appuser
 
+# Traçabilité : version et commit lisibles par docker inspect (déclarés tard pour garder le cache)
+ARG VERSION=dev
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.title="velov-api" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}"
+
 EXPOSE 8000
 
 # Sain = prêt à prédire : on interroge /ready (pas de curl dans une image slim)
