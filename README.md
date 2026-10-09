@@ -48,6 +48,29 @@ curl -X POST http://127.0.0.1:8000/v1/predict \
 Le `timestamp` doit porter un fuseau (`+02:00`, `Z`...) : sans fuseau, l'API répond 422.
 Les instants sont renvoyés et journalisés en UTC (`"target_timestamp": "2026-10-06T07:00:00Z"`).
 
+## Lancer avec Docker (S2)
+
+Le modèle est embarqué dans l'image : il faut l'entraîner **avant** le build.
+
+```bash
+python -m velov.data && python -m velov.train     # crée models/model.joblib + metadata.json
+cp .env.example .env
+
+docker build -t velov-api:0.1.0 .
+docker run -d --name vt -p 8000:8000 --env-file .env velov-api:0.1.0
+
+docker ps                                  # STATUS doit passer à (healthy)
+curl http://localhost:8000/health          # le process répond
+curl http://localhost:8000/ready           # le modèle est chargé
+curl -X POST http://localhost:8000/v1/predict   -H "Content-Type: application/json"   -d '{"station_id": 3, "timestamp": "2026-10-06T08:00:00+02:00", "capacity": 20,
+       "bikes_available": 12, "temperature": 14.5, "is_raining": false}'
+
+docker logs vt                             # lire ce que dit l'application
+docker stop vt && docker rm vt             # arrêter
+```
+
+En cas de problème, méthode dans l'ordre : `docker ps -a`, `docker logs`, `docker exec`, `docker inspect`.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.

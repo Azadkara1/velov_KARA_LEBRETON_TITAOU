@@ -1,0 +1,14 @@
+.git
+.venv
+**/__pycache__
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+data/
+mlflow.db
+mlruns/
+tests/
+docs/
+exercices/
+# surtout pas models/ : l'image en a besoin
