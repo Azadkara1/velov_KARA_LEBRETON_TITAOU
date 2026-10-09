@@ -71,6 +71,35 @@ docker stop vt && docker rm vt             # arrêter
 
 En cas de problème, méthode dans l'ordre : `docker ps -a`, `docker logs`, `docker exec`, `docker inspect`.
 
+## Lancer avec Compose : API + PostgreSQL (S2)
+
+Chaque prédiction est enregistrée dans une table `predictions` (EX-08).
+
+```bash
+python -m velov.data && python -m velov.train     # crée models/model.joblib + metadata.json
+cp .env.example .env                              # puis fixer un vrai POSTGRES_PASSWORD
+
+docker compose up --build -d
+docker compose ps                                  # les deux services doivent passer healthy
+
+curl http://localhost:8000/ready
+curl -X POST http://localhost:8000/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{"station_id": 3, "timestamp": "2026-10-06T08:00:00+02:00", "capacity": 20,
+       "bikes_available": 12, "temperature": 14.5, "is_raining": false}'
+
+# vérifier que la prédiction est bien en base
+docker compose exec db psql -U velov -c "SELECT id, station_id, predicted_bikes, model_version, created_at FROM predictions;"
+
+docker compose logs -f api                          # lire les logs
+docker compose down                                 # arrêter, les données restent (volume pgdata)
+docker compose down -v                               # arrêter et effacer les données
+```
+
+Si `DATABASE_URL` n'est pas définie, ou si la base est indisponible, l'API démarre et prédit
+quand même : l'échec d'écriture est seulement journalisé (`docker compose logs api`), jamais
+renvoyé au client (EX-07).
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.

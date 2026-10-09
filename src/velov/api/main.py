@@ -18,13 +18,14 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 
+from velov.api import db
 from velov.api.schemas import PredictionRequest, PredictionResponse
 from velov.features import FEATURES, add_features
 from velov.train import METADATA_FILENAME, sha256_of
@@ -32,7 +33,7 @@ from velov.train import METADATA_FILENAME, sha256_of
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("velov.api")
 
-STATE: dict = {"model": None, "metadata": None}
+STATE: dict = {"model": None, "metadata": None, "db_pool": None}
 
 
 def load_model(model_dir: Path) -> tuple[object, dict]:
@@ -40,7 +41,7 @@ def load_model(model_dir: Path) -> tuple[object, dict]:
     metadata_path = model_dir / METADATA_FILENAME
     if not metadata_path.exists():
         raise FileNotFoundError(f"{metadata_path} introuvable")
-    metadata = json.loads(metadata_path.read_text())
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     model_path = model_dir / metadata["artifact"]["file"]
     if sha256_of(model_path) != metadata["artifact"]["sha256"]:
         raise RuntimeError(f"Empreinte invalide pour {model_path}")
@@ -56,8 +57,23 @@ async def lifespan(app: FastAPI):
         logger.info("Modèle %s chargé", STATE["metadata"]["model_version"])
     except Exception:
         logger.exception("Échec du chargement du modèle depuis %s", model_dir)
+
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        try:
+            STATE["db_pool"] = db.open_pool(database_url)
+            logger.info("Connexion à la base de données établie")
+        except Exception:
+            # EX-07 : la cause est dans les logs. L'API continue de prédire sans journaliser.
+            logger.exception("Base de données indisponible, les prédictions ne seront pas enregistrées")
+    else:
+        logger.warning("DATABASE_URL absent : les prédictions ne seront pas enregistrées")
+
     yield
+
     STATE.update(model=None, metadata=None)
+    if STATE["db_pool"] is not None:
+        STATE["db_pool"].close()
 
 
 app = FastAPI(title="Vélo'v availability API", version="1.0.0", lifespan=lifespan)
@@ -93,9 +109,27 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     # pour l'entraînement et l'API, sinon training-serving skew silencieux.
     frame = add_features(pd.DataFrame([request.model_dump()]))
     prediction = float(STATE["model"].predict(frame[FEATURES])[0])
+    target_timestamp = request.timestamp + timedelta(hours=1)
+    predicted_bikes = min(max(prediction, 0.0), float(request.capacity))
+    model_version = STATE["metadata"]["model_version"]
+
+    if STATE["db_pool"] is not None:
+        db.record_prediction(
+            STATE["db_pool"],
+            station_id=request.station_id,
+            requested_at=datetime.now(UTC),
+            target_timestamp=target_timestamp,
+            capacity=request.capacity,
+            bikes_available=request.bikes_available,
+            temperature=request.temperature,
+            is_raining=request.is_raining,
+            predicted_bikes=predicted_bikes,
+            model_version=model_version,
+        )
+
     return PredictionResponse(
         station_id=request.station_id,
-        target_timestamp=request.timestamp + timedelta(hours=1),
-        predicted_bikes=min(max(prediction, 0.0), float(request.capacity)),
-        model_version=STATE["metadata"]["model_version"],
+        target_timestamp=target_timestamp,
+        predicted_bikes=predicted_bikes,
+        model_version=model_version,
     )
