@@ -85,7 +85,7 @@ def model_info() -> dict:
     return STATE["metadata"]
 
 
-@app.post("/v1/prediction", response_model=PredictionResponse)
+@app.post("/v1/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
     if STATE["model"] is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
