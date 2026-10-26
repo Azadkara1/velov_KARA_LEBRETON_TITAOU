@@ -12,3 +12,4 @@ tests/
 docs/
 exercices/
 # surtout pas models/ : l'image en a besoin
+dbt/

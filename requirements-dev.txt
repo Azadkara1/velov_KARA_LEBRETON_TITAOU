@@ -5,3 +5,7 @@ httpx==0.28.1
 httpx2==2.13.1
 ruff==0.16.9
 mlflow==3.16.1
+# TP3 : pipeline de données (modèles dbt silver/gold) et contrat de données
+dbt-core==1.11.16
+dbt-postgres==1.10.0
+pandera==0.35.0

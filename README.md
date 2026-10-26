@@ -100,6 +100,41 @@ Si `DATABASE_URL` n'est pas définie, ou si la base est indisponible, l'API dém
 quand même : l'échec d'écriture est seulement journalisé (`docker compose logs api`), jamais
 renvoyé au client (EX-07).
 
+## Pipeline de données (S3)
+
+```
+CSV / collecte --ingest--> bronze.velov_raw --dbt--> silver.stg_observations --dbt--> gold.gold_hourly_features --> train.py
+ (brut, tel que reçu)      (PK station+instant)      (propre, 1 ligne / station / heure)   (contrat enforced)       (contrat Pandera)
+```
+
+| Couche | Rôle | Garantie |
+|---|---|---|
+| bronze | données brutes, jamais corrigées | idempotente : clé primaire + `ON CONFLICT DO NOTHING` |
+| silver | heure pleine, dédoublonnage, lignes incohérentes écartées | une ligne par (station, heure) |
+| gold | table d'entraînement : colonnes du contrat + `bikes_next_hour` | schéma figé (`contract.enforced`), tests dbt |
+
+```bash
+pip install -r requirements-dev.txt && pip install -e .
+cp .env.example .env                      # fixer POSTGRES_PASSWORD
+set -a; . ./.env; set +a                  # PowerShell : $env:POSTGRES_PASSWORD="..."
+docker compose up -d db                   # PostgreSQL, publié sur 127.0.0.1:5432 uniquement
+python -m velov.data                      # génère data/velov_history.csv
+python -m velov.ingest                    # 1er passage : N lignes nouvelles
+python -m velov.ingest                    # 2e passage  : 0 ligne nouvelle (idempotent)
+cd dbt/velov && dbt build --profiles-dir . && cd ../..   # silver + gold + tests
+python -m velov.train --source gold       # lit gold, vérifie le contrat Pandera, entraîne
+```
+
+Vérifier l'idempotence de bout en bout (EX-10) : l'empreinte doit être identique avant et après un rejeu.
+
+```bash
+docker compose exec db psql -U velov -At -c "select md5(string_agg(t::text,'|' order by station_id, timestamp)) from gold.gold_hourly_features t"
+```
+
+Choix de conception : les features dérivées (heure, jour, `occupancy_rate`) ne sont **pas** calculées en SQL.
+Elles restent dans `velov.features`, partagé avec l'API, pour qu'il n'y ait qu'une seule implémentation (anti training-serving skew).
+Choix batch / streaming : [ADR-0002](docs/adr/0002-batch-micro-batch-streaming.md).
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
@@ -115,6 +150,9 @@ src/velov/
   train.py         entraînement, baseline, artefact + metadata.json, option MLflow
   api/main.py      FastAPI : /health, /ready, /v1/model, /v1/predict, /v1/predict/batch
   api/schemas.py   contrat d'entrée / sortie (Pydantic)
+  ingest.py        ingestion bronze idempotente (CSV -> PostgreSQL)
+  contract.py      contrat de la table gold (Pandera), vérifié avant l'entraînement
+dbt/velov/         modèles dbt silver et gold, tests, contrat enforced
 tests/             pytest (features, API)
 docs/              templates : model card, runbook, ADR
 exercices/         démo pickle (S1)

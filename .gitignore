@@ -15,3 +15,7 @@ mlruns/
 # Secrets
 .env
 *.egg-info/
+
+# dbt
+dbt/velov/target/
+dbt/velov/logs/

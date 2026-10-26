@@ -8,6 +8,7 @@ Ce qu'on distribue (S1) n'est pas "un modèle" mais un paquet :
 Usage :
     python -m velov.train --data data/velov_history.csv --out models/
     python -m velov.train --data data/velov_history.csv --out models/ --mlflow
+    python -m velov.train --source gold --out models/     # lit gold.gold_hourly_features (TP3)
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+import psycopg
 import sklearn
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -29,14 +31,17 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
+from velov.contract import validate_gold
 from velov.features import (
     CATEGORICAL_FEATURES,
     FEATURES,
     NUMERIC_FEATURES,
     RAW_COLUMNS,
     TARGET,
+    add_features,
     make_training_frame,
 )
+from velov.ingest import default_database_url
 
 MODEL_FILENAME = "model.joblib"
 METADATA_FILENAME = "metadata.json"
@@ -72,19 +77,40 @@ def temporal_split(df: pd.DataFrame, test_days: int) -> tuple[pd.DataFrame, pd.D
     return train, test
 
 
+def read_gold(database_url: str) -> pd.DataFrame:
+    """Lit la table gold, puis vérifie le contrat Pandera AVANT tout entraînement (EX-12)."""
+    with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+        cur.execute("SET TIME ZONE 'UTC'")
+        cur.execute("SELECT * FROM gold.gold_hourly_features ORDER BY station_id, timestamp")
+        columns = [c.name for c in cur.description]
+        df = pd.DataFrame(cur.fetchall(), columns=columns)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    return validate_gold(df)
+
+
 def train(
-    data_path: Path,
+    data_path: Path | None,
     out_dir: Path,
     version: str = "0.1.0",
     test_days: int = 14,
     seed: int = 42,
+    source: str = "csv",
 ) -> dict:
-    """Entraîne, évalue contre une baseline, écrit l'artefact. Retourne les métadonnées."""
-    if not data_path.exists():
-        raise FileNotFoundError(f"{data_path} introuvable : lancer d'abord `python -m velov.data`")
+    """Entraîne, évalue contre une baseline, écrit l'artefact. Retourne les métadonnées.
 
-    raw = pd.read_csv(data_path, parse_dates=["timestamp"])
-    frame = make_training_frame(raw)
+    source="csv"  : lit `data_path` et calcule la cible (chemin S1/S2).
+    source="gold" : lit la table gold (cible déjà calculée par dbt), contrat vérifié avant.
+    """
+    if source == "gold":
+        gold = read_gold(default_database_url())
+        frame = add_features(gold)  # mêmes features que l'API : une seule implémentation
+        data_hash = hashlib.sha256(pd.util.hash_pandas_object(gold, index=False).values.tobytes()).hexdigest()
+    else:
+        if not data_path.exists():
+            raise FileNotFoundError(f"{data_path} introuvable : lancer d'abord `python -m velov.data`")
+        raw = pd.read_csv(data_path, parse_dates=["timestamp"])
+        frame = make_training_frame(raw)
+        data_hash = sha256_of(data_path)
     train_df, test_df = temporal_split(frame, test_days)
 
     pipeline = build_pipeline(seed)
@@ -117,7 +143,8 @@ def train(
             "n_test": int(len(test_df)),
         },
         "artifact": {"file": MODEL_FILENAME, "sha256": sha256_of(model_path)},
-        "data_sha256": sha256_of(data_path),
+        "data_source": source,
+        "data_sha256": data_hash,
         "runtime": {
             "python": platform.python_version(),
             "scikit-learn": sklearn.__version__,
@@ -167,13 +194,14 @@ def log_to_mlflow(metadata: dict, out_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Entraîne le modèle Vélo'v v0.")
+    parser.add_argument("--source", choices=["csv", "gold"], default="csv", help="origine des données")
     parser.add_argument("--data", type=Path, default=Path("data/velov_history.csv"))
     parser.add_argument("--out", type=Path, default=Path("models"))
     parser.add_argument("--version", default="0.1.0")
     parser.add_argument("--mlflow", action="store_true", help="journaliser aussi dans MLflow")
     args = parser.parse_args()
 
-    metadata = train(args.data, args.out, version=args.version)
+    metadata = train(args.data, args.out, version=args.version, source=args.source)
     m = metadata["metrics"]
     print(f"MAE modèle   : {m['mae_model']:.3f} vélos")
     print(f"MAE baseline : {m['mae_baseline_persistence']:.3f} vélos (persistance)")

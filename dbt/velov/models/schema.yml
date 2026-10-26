@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: stg_observations
+    description: Observations nettoyées, une ligne par station et par heure.
+    columns:
+      - name: station_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stations')
+                field: station_id
+      - name: observed_hour
+        data_tests: [not_null]
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            columns: [station_id, observed_hour]
+
+  - name: dim_stations
+    columns:
+      - name: station_id
+        data_tests: [unique, not_null]
+
+  - name: gold_hourly_features
+    description: >
+      Table d'entraînement publiée. Son schéma est un contrat (`contract.enforced`) :
+      si les colonnes ou les types ne correspondent pas, dbt refuse de construire la table (EX-12).
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: station_id
+        data_type: integer
+        constraints: [{type: not_null}]
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_stations')
+                field: station_id
+      - name: timestamp
+        data_type: timestamptz
+        constraints: [{type: not_null}]
+        data_tests: [not_null]
+      - name: capacity
+        data_type: integer
+        constraints: [{type: not_null}]
+        data_tests: [not_null]
+      - name: bikes_available
+        data_type: integer
+        constraints: [{type: not_null}]
+        data_tests: [not_null]
+      - name: temperature
+        data_type: double precision
+        constraints: [{type: not_null}]
+        data_tests: [not_null]
+      - name: is_raining
+        data_type: boolean
+        constraints: [{type: not_null}]
+        data_tests: [not_null]
+      - name: bikes_next_hour
+        data_type: integer
+        constraints: [{type: not_null}]
+        data_tests: [not_null]
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            columns: [station_id, timestamp]
+      - bikes_within_capacity:
+          arguments:
+            column_bikes: bikes_available
+            column_capacity: capacity
+      - bikes_within_capacity:
+          arguments:
+            column_bikes: bikes_next_hour
+            column_capacity: capacity
