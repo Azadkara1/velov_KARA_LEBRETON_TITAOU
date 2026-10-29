@@ -137,19 +137,20 @@ Choix batch / streaming : [ADR-0002](docs/adr/0002-batch-micro-batch-streaming.m
 
 ## Tracer, promouvoir, intégrer (S4)
 
-### 1. Serveur MLflow (PostgreSQL + volume d'artefacts)
+### 1. Serveur MLflow (base PostgreSQL partagée + volume d'artefacts)
 
 ```bash
-cp .env.example .env                       # fixer MLFLOW_DB_PASSWORD (jamais dans git)
-docker compose -f compose.mlflow.yaml up -d --build
-docker compose -f compose.mlflow.yaml ps   # mlflow et mlflow-db : healthy
-# interface : http://127.0.0.1:5000
+cp .env.example .env                       # POSTGRES_PASSWORD : le même qu'en S2, rien de nouveau
+docker compose -f compose.yaml -f compose.mlflow.yaml up -d --build
+docker compose -f compose.yaml -f compose.mlflow.yaml ps -a   # db, mlflow : up ; mlflow-db-init : Exited (0)
+# interface : http://127.0.0.1:5000  (sur la VM : http://<ip-vm>:5000)
 ```
 
-Runs, métriques et registre sont dans PostgreSQL (volume `mlflow-pgdata`), les modèles et fichiers dans le
-volume `mlflow-artifacts` : un `restart` ne perd rien (vérifié : versions et alias identiques après redémarrage).
-Le serveur est écouté sur `127.0.0.1` par défaut. Sur une VM : `MLFLOW_BIND=0.0.0.0` et
-`MLFLOW_ALLOWED_HOSTS=<ip-vm>:*,localhost:*` dans `.env`, pour que l'équipe y accède.
+`compose.mlflow.yaml` complète `compose.yaml` : MLflow réutilise le PostgreSQL du service `db`, dans une base
+dédiée `mlflow` (créée par `mlflow-db-init`, qui s'arrête ensuite). Runs, métriques et registre sont dans cette
+base, les modèles dans le volume `mlartifacts` : un `restart` ne perd rien (vérifié : versions et alias identiques).
+Le mot de passe n'est ni dans git ni dans le compose (`.env`). Attention : `docker compose down -v` efface aussi le registre.
+Le Dockerfile du serveur est `docker/mlflow.Dockerfile` (MLflow 3.16.1, même version que le client).
 
 ### 2. Runs tracés
 
@@ -229,7 +230,7 @@ src/velov/
   contract.py      contrat de la table gold (Pandera), vérifié avant l'entraînement
   tracking.py      trace un run dans MLflow, enregistre le modèle (alias challenger)
   registry.py      règle de promotion challenger -> champion
-compose.mlflow.yaml + docker/mlflow/   serveur MLflow (PostgreSQL + volume d'artefacts)
+compose.mlflow.yaml + docker/mlflow.Dockerfile   serveur MLflow (base partagée + volume d'artefacts)
 .github/workflows/ci.yml               lint, tests, gitleaks
 dbt/velov/         modèles dbt silver et gold, tests, contrat enforced
 tests/             pytest (features, API)
