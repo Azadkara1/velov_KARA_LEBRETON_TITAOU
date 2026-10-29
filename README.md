@@ -211,6 +211,33 @@ La règle est une fonction pure (`velov.registry.decide`), testée dans `tests/t
 (historique complet). Les actions sont épinglées sur un SHA de commit, les droits du workflow sont limités à la lecture.
 `.gitleaksignore` écarte un seul faux positif connu, par empreinte exacte : la clé factice de l'exercice d'audit S2.
 
+### 5. Livrer le champion et revenir en arrière
+
+```bash
+python -m velov.registry deliver                     # models/ <- paquet du champion (empreinte SHA-256 vérifiée)
+docker compose -f compose.yaml -f compose.mlflow.yaml up -d --build api
+curl localhost:8000/v1/model                         # artifact.sha256 = celui du champion
+
+python -m velov.registry rollback --to 1             # le champion redevient la version 1
+python -m velov.registry deliver && docker compose -f compose.yaml -f compose.mlflow.yaml up -d --build api
+```
+
+Revenir en arrière = repointer l'alias `champion` puis relivrer : aucun modèle n'est supprimé du registre, aucun
+ré-entraînement. Vérifié : v1 (empreinte `86b4b18da3f9`) → v2 (`842b0615d348`) → retour à v1 (`86b4b18da3f9`).
+`model_version` dans `/ready` vaut `0.1.0` pour tous les modèles (valeur par défaut de `--version`) : c'est
+l'empreinte, pas ce champ, qui identifie la version servie. À améliorer en passant `--version` à chaque entraînement.
+
+### 6. Pour aller plus loin (Stretch)
+
+- **Job image dans la CI** : construit l'image, la démarre et exige `/ready` (le modèle sait prédire). Il a déjà
+  trouvé un vrai défaut : l'API importait Pandera, absent des dépendances de serving, et le conteneur plantait.
+  Un test (`test_api_imports_without_training_only_dependencies`) l'empêche de revenir.
+- **Réentraînement planifié** : `.github/workflows/retrain.yml`, chaque lundi 03:00 UTC et à la demande ; entraîne,
+  lance les tests de modèle, publie le paquet en artefact. La promotion reste faite sur la VM.
+- **Protection de `main`** (réglage GitHub, non versionné) : Settings → Branches → Add rule sur `main` :
+  *Require a pull request before merging*, *Require status checks to pass* (`lint`, `test`, `gitleaks`, `image`),
+  *Do not allow bypassing*. À faire par le propriétaire du dépôt.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.

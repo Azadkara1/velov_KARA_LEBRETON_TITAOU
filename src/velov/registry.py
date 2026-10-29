@@ -17,18 +17,29 @@ Règle : promotion si les TROIS conditions sont vraies.
      meilleure moyenne globale peut cacher une pire prédiction quand le service compte.
 S'il n'y a pas encore de champion, seule la condition 1 s'applique (premier modèle).
 
+Livraison (Should) : `deliver` télécharge le paquet du champion dans models/ (ce que l'image Docker
+embarque), après avoir vérifié son empreinte SHA-256. `rollback` repose l'alias champion sur une
+version antérieure : revenir en arrière, c'est repointer l'alias puis relivrer, pas ré-entraîner.
+
 Usage :
     python -m velov.registry promote            # applique la règle, pose l'alias champion si OK
     python -m velov.registry promote --dry-run  # affiche seulement le verdict
+    python -m velov.registry deliver            # models/ <- paquet du champion
+    python -m velov.registry rollback --to 1    # le champion redevient la version 1
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 import sys
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from velov.tracking import CHALLENGER_ALIAS, REGISTERED_MODEL, require_tracking_uri
+from velov.train import METADATA_FILENAME, sha256_of
 
 CHAMPION_ALIAS = "champion"
 # Seuils fixés AU-DESSUS du bruit lié à la seed, mesuré sur 8 seeds (voir README) :
@@ -113,6 +124,47 @@ def promote(margin: float, peak_tolerance: float, dry_run: bool = False) -> Deci
     return decision
 
 
+def deliver(out_dir: Path, version: str | None = None) -> dict:
+    """Copie le paquet (model.joblib + metadata.json) du champion (ou d'une version) dans `out_dir`.
+
+    Refuse de livrer si l'empreinte du fichier ne correspond pas à celle écrite dans metadata.json :
+    un artefact altéré ou tronqué en route ne doit jamais atteindre l'image.
+    """
+    import mlflow
+    from mlflow import MlflowClient
+
+    require_tracking_uri()
+    client = MlflowClient()
+    mv = (
+        client.get_model_version(REGISTERED_MODEL, version)
+        if version
+        else client.get_model_version_by_alias(REGISTERED_MODEL, CHAMPION_ALIAS)
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        local = Path(mlflow.artifacts.download_artifacts(run_id=mv.run_id, artifact_path="package", dst_path=tmp))
+        metadata = json.loads((local / METADATA_FILENAME).read_text(encoding="utf-8"))
+        model_file = local / metadata["artifact"]["file"]
+        if sha256_of(model_file) != metadata["artifact"]["sha256"]:
+            raise SystemExit(f"Livraison refusée : empreinte invalide pour la version {mv.version}")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(model_file, out_dir / model_file.name)
+        shutil.copy2(local / METADATA_FILENAME, out_dir / METADATA_FILENAME)
+    sha = metadata["artifact"]["sha256"][:12]
+    print(f"Livré : version {mv.version} (run {mv.run_id[:8]}, sha256 {sha}...) -> {out_dir}")
+    return metadata
+
+
+def rollback(to_version: str) -> None:
+    """Le champion redevient `to_version`. N'agit que sur l'alias : aucun modèle n'est supprimé."""
+    from mlflow import MlflowClient
+
+    require_tracking_uri()
+    client = MlflowClient()
+    client.get_model_version(REGISTERED_MODEL, to_version)  # lève une erreur si elle n'existe pas
+    client.set_registered_model_alias(REGISTERED_MODEL, CHAMPION_ALIAS, to_version)
+    print(f"Rollback : le champion est maintenant la version {to_version}. Relivrer puis reconstruire l'image.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Registre : promotion du challenger.")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -120,7 +172,19 @@ def main() -> None:
     p.add_argument("--margin", type=float, default=DEFAULT_MARGIN)
     p.add_argument("--peak-tolerance", type=float, default=DEFAULT_PEAK_TOLERANCE)
     p.add_argument("--dry-run", action="store_true")
+    d = sub.add_parser("deliver", help="copie le paquet du champion dans models/")
+    d.add_argument("--out", type=Path, default=Path("models"))
+    d.add_argument("--version", help="une version précise plutôt que le champion")
+    r = sub.add_parser("rollback", help="repose l'alias champion sur une version antérieure")
+    r.add_argument("--to", required=True)
     args = parser.parse_args()
+
+    if args.cmd == "deliver":
+        deliver(args.out, args.version)
+        return
+    if args.cmd == "rollback":
+        rollback(args.to)
+        return
 
     decision = promote(args.margin, args.peak_tolerance, args.dry_run)
     sys.exit(0 if decision.promote or decision.noop else 1)  # code 1 si refusé : utilisable dans un pipeline

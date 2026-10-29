@@ -31,7 +31,6 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-from velov.contract import validate_gold
 from velov.features import (
     CATEGORICAL_FEATURES,
     FEATURES,
@@ -79,6 +78,9 @@ def temporal_split(df: pd.DataFrame, test_days: int) -> tuple[pd.DataFrame, pd.D
 
 def read_gold(database_url: str) -> pd.DataFrame:
     """Lit la table gold, puis vérifie le contrat Pandera AVANT tout entraînement (EX-12)."""
+    # Import local : l'API importe ce module (sha256_of) mais Pandera n'est pas une dépendance de serving.
+    from velov.contract import validate_gold
+
     with psycopg.connect(database_url) as conn, conn.cursor() as cur:
         cur.execute("SET TIME ZONE 'UTC'")
         cur.execute("SELECT * FROM gold.gold_hourly_features ORDER BY station_id, timestamp")

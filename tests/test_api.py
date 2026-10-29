@@ -54,3 +54,18 @@ def test_timestamp_without_timezone_rejected(client, valid_payload):
 def test_prediction_within_capacity(client, valid_payload):
     r = client.post("/v1/predict", json=valid_payload)
     assert 0 <= r.json()["predicted_bikes"] <= valid_payload["capacity"]
+
+
+def test_api_imports_without_training_only_dependencies():
+    """Régression : l'image de serving n'a ni pandera, ni dbt, ni mlflow. L'API ne doit pas les importer."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "for m in ('pandera', 'mlflow', 'dbt'):\n"
+        "    sys.modules[m] = None  # un import de ce module lèvera ImportError\n"
+        "import velov.api.main\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, result.stderr
