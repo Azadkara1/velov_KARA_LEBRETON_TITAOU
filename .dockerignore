@@ -13,3 +13,7 @@ docs/
 exercices/
 # surtout pas models/ : l'image en a besoin
 dbt/
+.github/
+docker/
+compose*.yaml
+.gitleaksignore

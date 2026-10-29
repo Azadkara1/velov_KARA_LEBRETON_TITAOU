@@ -1,0 +1,49 @@
+# Serveur MLflow : suivi des runs + registre des modèles (TP4).
+#   docker compose -f compose.mlflow.yaml up -d --build
+# Le mot de passe de la base vient de .env (jamais dans git, jamais dans ce fichier) ;
+# `:?` fait échouer le démarrage s'il manque, plutôt que d'utiliser une valeur par défaut.
+services:
+  mlflow-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:?}
+      POSTGRES_DB: mlflow
+    volumes:
+      - mlflow-pgdata:/var/lib/postgresql/data   # runs, paramètres, métriques, registre
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  mlflow:
+    build: docker/mlflow
+    depends_on:
+      mlflow-db:
+        condition: service_healthy
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql+psycopg2://mlflow:${MLFLOW_DB_PASSWORD:?}@mlflow-db:5432/mlflow
+    # Le serveur sert aussi les artefacts (--serve-artifacts) : les clients n'ont pas besoin
+    # d'accéder au volume, ils passent par HTTP. Ils sont stockés dans le volume ci-dessous.
+    command: >-
+      mlflow server
+      --host 0.0.0.0 --port 5000
+      --serve-artifacts --artifacts-destination /mlartifacts
+      --allowed-hosts "${MLFLOW_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*}"
+    ports:
+      # Boucle locale par défaut. Sur la VM : MLFLOW_BIND=0.0.0.0 pour que l'équipe y accède.
+      - "${MLFLOW_BIND:-127.0.0.1}:5000:5000"
+    volumes:
+      - mlflow-artifacts:/mlartifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mlflow-pgdata:
+  mlflow-artifacts:

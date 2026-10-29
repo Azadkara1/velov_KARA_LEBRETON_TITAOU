@@ -1,0 +1,4 @@
+# Faux positif connu : la clé de démonstration "sk-prod-..." de l'exercice d'audit Dockerfile (S2),
+# citée dans CLAUDE.md. Ce n'est pas un secret réel. Ignoré par empreinte exacte (commit + fichier + ligne),
+# pas par motif : toute AUTRE clé détectée fera toujours échouer la CI.
+15331925b446e373d6116519c89e17c0b43bcdab:CLAUDE.md:generic-api-key:42

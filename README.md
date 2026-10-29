@@ -135,6 +135,81 @@ Choix de conception : les features dérivées (heure, jour, `occupancy_rate`) ne
 Elles restent dans `velov.features`, partagé avec l'API, pour qu'il n'y ait qu'une seule implémentation (anti training-serving skew).
 Choix batch / streaming : [ADR-0002](docs/adr/0002-batch-micro-batch-streaming.md).
 
+## Tracer, promouvoir, intégrer (S4)
+
+### 1. Serveur MLflow (PostgreSQL + volume d'artefacts)
+
+```bash
+cp .env.example .env                       # fixer MLFLOW_DB_PASSWORD (jamais dans git)
+docker compose -f compose.mlflow.yaml up -d --build
+docker compose -f compose.mlflow.yaml ps   # mlflow et mlflow-db : healthy
+# interface : http://127.0.0.1:5000
+```
+
+Runs, métriques et registre sont dans PostgreSQL (volume `mlflow-pgdata`), les modèles et fichiers dans le
+volume `mlflow-artifacts` : un `restart` ne perd rien (vérifié : versions et alias identiques après redémarrage).
+Le serveur est écouté sur `127.0.0.1` par défaut. Sur une VM : `MLFLOW_BIND=0.0.0.0` et
+`MLFLOW_ALLOWED_HOSTS=<ip-vm>:*,localhost:*` dans `.env`, pour que l'équipe y accède.
+
+### 2. Runs tracés
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000     # PowerShell : $env:MLFLOW_TRACKING_URI="..."
+python -m velov.data
+python -m velov.train --mlflow --seed 42
+```
+
+Chaque run porte : paramètres (`seed`, `learning_rate`, `max_iter`, `test_days`), métriques de **test**
+(`mae_model`, `mae_baseline_persistence`, `mae_model_peak_hours`), tags (`git_commit`, `git_dirty`, `data_sha256`,
+`data_start`, `data_end`), le modèle avec sa signature, et le paquet `package/model.joblib` + `metadata.json`.
+`git_dirty=true` signale un run lancé avec des modifications non commitées : il n'est pas reproductible à l'identique.
+
+**Écart entre seeds** (mêmes données, 90 jours, 20 stations, test sur les 14 derniers jours) :
+
+| seed | MAE modèle | MAE heures de pointe |
+|---|---|---|
+| 0 | 1,360 | 1,467 |
+| 1 | 1,341 | 1,395 |
+| 2 | 1,340 | 1,407 |
+| 3 | 1,345 | 1,408 |
+| 4 | 1,342 | 1,412 |
+| 5 | 1,349 | 1,424 |
+| 7 | 1,345 | 1,427 |
+| 42 | 1,339 | 1,415 |
+
+Deux runs avec la **même** seed donnent exactement les mêmes métriques (reproductible). Entre seeds, la MAE varie
+de **0,021** (1,339 à 1,360) et la MAE de pointe de **0,072**. Seed 42 contre seed 7 : 1,339 contre 1,345 (écart 0,006).
+Cet écart est du bruit, pas une amélioration : il fixe les seuils de la règle de promotion.
+
+### 3. Registre et règle de promotion
+
+Le modèle `velov-availability` est enregistré à chaque run avec l'alias `challenger` (candidat). L'alias `champion`
+désigne le modèle autorisé à être servi. Le passage de l'un à l'autre n'est pas manuel :
+
+```bash
+python -m velov.registry promote            # applique la règle ; code retour 1 si refusé
+python -m velov.registry promote --dry-run  # verdict seul
+```
+
+Le challenger est promu si les **trois** conditions sont vraies :
+
+| # | Condition | Pourquoi |
+|---|---|---|
+| 1 | MAE du modèle < MAE de la baseline de persistance | le modèle justifie sa complexité (EX-05) |
+| 2 | MAE inférieure d'au moins **0,03** à celle du champion | 0,03 > 0,021, l'étendue du bruit entre seeds : on ne promeut pas du hasard |
+| 3 | MAE aux heures de pointe pas pire que celle du champion de plus de **0,08** | 0,08 > 0,072, étendue du bruit de pointe : une meilleure moyenne ne doit pas cacher une pire pointe |
+
+Sans champion, seule la condition 1 s'applique. Exemple réel : le premier challenger devient champion ; un nouvel
+entraînement seed 42 (gain de 0,006) est **refusé** : `2. gain +0.006 vélo(s) < marge exigée 0.030 (bruit possible)`.
+La règle est une fonction pure (`velov.registry.decide`), testée dans `tests/test_registry.py`.
+
+### 4. Intégration continue
+
+`.github/workflows/ci.yml`, sur chaque push et pull request : `lint` (ruff), `test` (pytest, dont
+`tests/test_model.py` : le modèle bat la baseline, prédictions plausibles, métriques reproductibles) et `gitleaks`
+(historique complet). Les actions sont épinglées sur un SHA de commit, les droits du workflow sont limités à la lecture.
+`.gitleaksignore` écarte un seul faux positif connu, par empreinte exacte : la clé factice de l'exercice d'audit S2.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
@@ -152,6 +227,10 @@ src/velov/
   api/schemas.py   contrat d'entrée / sortie (Pydantic)
   ingest.py        ingestion bronze idempotente (CSV -> PostgreSQL)
   contract.py      contrat de la table gold (Pandera), vérifié avant l'entraînement
+  tracking.py      trace un run dans MLflow, enregistre le modèle (alias challenger)
+  registry.py      règle de promotion challenger -> champion
+compose.mlflow.yaml + docker/mlflow/   serveur MLflow (PostgreSQL + volume d'artefacts)
+.github/workflows/ci.yml               lint, tests, gitleaks
 dbt/velov/         modèles dbt silver et gold, tests, contrat enforced
 tests/             pytest (features, API)
 docs/              templates : model card, runbook, ADR
