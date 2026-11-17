@@ -42,6 +42,11 @@ def test_ready_returns_model_version(client):
     assert r.json()["model_version"] == "0.0.0-test"
 
 
+def test_process_time_header(client, valid_payload):
+    r = client.post("/v1/predict", json=valid_payload)
+    assert float(r.headers["X-Process-Time-Ms"]) >= 0
+
+
 def test_unknown_field_rejected(client, valid_payload):
     assert client.post("/v1/predict", json={**valid_payload, "foo": 1}).status_code == 422
 

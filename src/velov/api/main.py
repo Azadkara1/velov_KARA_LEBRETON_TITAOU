@@ -17,13 +17,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from velov.api import db
 from velov.api.schemas import PredictionRequest, PredictionResponse
@@ -77,6 +78,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Vélo'v availability API", version="1.0.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def add_process_time(request: Request, call_next):
+    """Temps passé DANS l'API (S5) : à comparer à la latence vue par le client (Locust)."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Process-Time-Ms"] = f"{(time.perf_counter() - start) * 1000:.2f}"
+    return response
 
 
 @app.get("/health")

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Remplace la commande `locust` par l'image officielle, pour Git Bash sous Windows :
+# Smart App Control bloque la DLL de gevent installée par pip (_gevent_clocal).
+#
+# Usage (depuis la racine du dépôt) :
+#   export PATH="$PWD/loadtest/bin:$PATH"   # Windows + Smart App Control uniquement ; sur la VM, le locust de pip
+#   locust -f loadtest/locustfile.py --host http://localhost:8000 --headless -u 10 -r 10 -t 1m --only-summary
+#   ./loadtest/paliers.sh http://localhost:8000 w1
+#
+# - localhost / 127.0.0.1 deviennent host.docker.internal (l'API est publiée sur l'hôte) ;
+# - le répertoire courant est monté dans le conteneur : chemins relatifs et --csv results/... fonctionnent ;
+# - Locust est borné à LOCUST_CPUS cœurs (défaut 2) et nommé velov-locust-<pid>, visible dans `docker stats`.
+set -euo pipefail
+
+IMAGE="${LOCUST_IMAGE:-locustio/locust:2.47.0}"
+CPUS="${LOCUST_CPUS:-2}"
+HERE_POSIX="$(pwd)"
+HERE_WIN="$(pwd -W)"
+
+args=()
+for a in "$@"; do
+  a="${a//http:\/\/localhost/http://host.docker.internal}"
+  a="${a//http:\/\/127.0.0.1/http://host.docker.internal}"
+  a="${a#"$HERE_POSIX"/}"   # chemin absolu Git Bash sous le dépôt -> relatif
+  args+=("$a")
+done
+
+exec env MSYS_NO_PATHCONV=1 docker run --rm --name "velov-locust-$$" --cpus "$CPUS" \
+  -v "${HERE_WIN}:/mnt/work" -w /mnt/work \
+  "$IMAGE" "${args[@]}"

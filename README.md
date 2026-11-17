@@ -238,6 +238,56 @@ l'empreinte, pas ce champ, qui identifie la version servie. À améliorer en pas
   *Require a pull request before merging*, *Require status checks to pass* (`lint`, `test`, `gitleaks`, `image`),
   *Do not allow bypassing*. À faire par le propriétaire du dépôt.
 
+## Performance (S5)
+
+SLO de latence (EX-16) : p95 de `POST /v1/predict` sous 200 ms.
+
+### Protocole de mesure
+
+**Mesure locale** (VM indisponible) : l'API et Locust tournent sur le même poste, mais l'API est bornée à un cœur.
+
+| Élément | Valeur |
+|---|---|
+| Poste | AMD Ryzen AI 7 350, 8 cœurs / 16 threads (`os.cpu_count()` = 16), 63 Go de RAM, Windows 11 Pro |
+| API | `docker compose up -d --build api` puis `docker update --cpus 1` : 1 cœur, 1 worker uvicorn, base PostgreSQL active (journalisation EX-08) |
+| Image API | Python 3.12.15, scikit-learn 1.9.1, FastAPI 0.142.2, uvicorn 0.46.0, modèle 0.1.0 |
+| Locust | 2.47.0, image officielle `locustio/locust:2.47.0` bornée à 2 cœurs (voir ci-dessous) |
+| Docker | Engine 29.8.2, Compose 5.5.1 (Docker Desktop, backend WSL 2) |
+| Commit | `9fb2bfc` (tag `tp4`) + modifications TP5 de la branche `tp5` |
+| Premier essai | 2026-11-17, 11:03 à 11:04 UTC |
+| Services arrêtés | MLflow ; navigateur et IDE lourds fermés pendant les paliers |
+
+**Locust en conteneur.** Sur ce poste, Smart App Control bloque la DLL de gevent installée par pip
+(`ImportError: DLL load failed while importing _gevent_clocal`). Locust tourne donc dans son image officielle,
+via le script [loadtest/bin/locust](loadtest/bin/locust), mis en tête du `PATH`. Ce script remplace `localhost` par
+`host.docker.internal` et monte le dépôt dans le conteneur : `loadtest/paliers.sh` et les commandes du cours restent
+inchangés. Les requêtes traversent le réseau de Docker Desktop, ce qui ajoute un peu de latence par rapport à la VM.
+
+```bash
+# Git Bash, à la racine du dépôt (Windows avec Smart App Control uniquement)
+export PATH="$PWD/loadtest/bin:$PATH"
+locust --version                                  # locust 2.47.0 ... (Python 3.14.x) : c'est bien le conteneur
+./loadtest/paliers.sh http://localhost:8000 w1
+```
+
+Ailleurs (VM, Linux, macOS), on garde le `locust` installé par `pip install -r requirements-loadtest.txt`.
+Le fichier `.gitattributes` force les fins de ligne LF sur les scripts bash : avec `core.autocrlf=true`, un script
+extrait en CRLF échoue dans Git Bash dès `set -euo pipefail`.
+
+### Premier essai : 10 usagers, 1 minute
+
+```bash
+locust -f loadtest/locustfile.py --host http://localhost:8000 --headless -u 10 -r 10 -t 1m --only-summary
+```
+
+| Endpoint | Requêtes | Erreurs | p50 | p95 | p99 | Débit |
+|---|---|---|---|---|---|---|
+| `POST /v1/predict` | 498 | 0 (0 %) | 57 ms | 290 ms | 650 ms | 8,4 req/s |
+| `GET /health` | 48 | 0 (0 %) | 12 ms | 56 ms | 230 ms | 0,8 req/s |
+
+Cet essai a été fait sans échauffement et sur batterie. Les paliers de l'étape 2 se font sur secteur, après
+l'échauffement d'une minute de `paliers.sh`.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
