@@ -339,6 +339,68 @@ par palier.
   Le réseau de Docker Desktop entre Locust et l'API en explique peut-être une partie ; l'étape 3 mesurera le temps
   passé dans l'API pour le vérifier.
 
+### Où part le temps (étape 3)
+
+[scripts/bench_predict.py](scripts/bench_predict.py) reprend le code de la route `POST /v1/predict` étape par étape,
+avec les mêmes fonctions et sans réseau. Le modèle est chargé avant le chronomètre ; 50 itérations d'échauffement
+ne sont pas comptées, puis 500 sont mesurées avec `time.perf_counter_ns`, chacune sur une requête différente. Le
+script tourne dans l'image de l'API, bornée à un cœur, sur le réseau Compose pour joindre la base :
+
+```bash
+docker run --rm --cpus 1 --network velov_kara_lebreton_titaou_default -v "$PWD/scripts:/app/scripts:ro" \
+  velov_kara_lebreton_titaou-api python scripts/bench_predict.py --n 500 --batch 1 100 1000 \
+  --database-url "postgresql://velov:$POSTGRES_PASSWORD@db:5432/velov"   # lignes 'bench' supprimées à la fin
+python scripts/bench_predict.py --n 500 --http http://localhost:8000      # client contre X-Process-Time-Ms
+```
+
+**Temps par étape** (`results/bench_predict_conteneur.md`) :
+
+| Étape | p50 | p95 | Part du p50 |
+|---|---|---|---|
+| 0. validation Pydantic (faite par FastAPI avant la route) | 0,016 ms | 0,041 ms | 0 % |
+| 1. construction du DataFrame | 0,285 ms | 0,588 ms | 6 % |
+| 2. `add_features` | 1,078 ms | 1,513 ms | 21 % |
+| 3. `model.predict` | **2,270 ms** | 2,916 ms | **44 %** |
+| 4. bornage et `PredictionResponse` | 0,013 ms | 0,028 ms | 0 % |
+| 5. écriture en base (`record_prediction`, synchrone) | 1,481 ms | 1,963 ms | 29 % |
+| **Total de la route** | **5,17 ms** | **6,91 ms** | |
+
+**`model.predict` selon la taille du lot** :
+
+| Lignes | p50 | p95 | p50 par ligne |
+|---|---|---|---|
+| 1 | 2,08 ms | 2,53 ms | 2,08 ms |
+| 100 | 2,50 ms | 2,58 ms | 0,025 ms |
+| 1 000 | 6,44 ms | 6,96 ms | 0,006 ms |
+
+**Temps dans l'API contre temps vu par le client** (`results/bench_http.md`, 500 requêtes séquentielles) :
+
+| Mesure | p50 | p95 |
+|---|---|---|
+| Locust à 10 usagers (étape 2) | 14 ms | 49 ms |
+| Client séquentiel (`--http`) | 12,3 ms | 34,8 ms |
+| `X-Process-Time-Ms` (dans l'API) | 8,2 ms | 10,1 ms |
+
+**Lecture.**
+
+- **Dans la route, le goulot est `model.predict` : 2,3 ms sur 5,2, soit 44 % du p50.** Ce temps est presque
+  entièrement fixe : prédire 100 lignes coûte 2,5 ms, à peine plus qu'une seule (2,1 ms). On paie donc surtout le
+  coût d'appel du modèle, pas le calcul par ligne. L'écriture synchrone en base vient ensuite (29 %), puis
+  `add_features` (21 %).
+- **Écart Locust / API : environ 6 ms au p50** (14 ms vus par Locust contre 8,2 ms dans l'API). C'est le réseau de
+  Docker Desktop et le traitement HTTP hors de l'application : à 10 usagers, l'API n'est pas chargée.
+- **La route n'explique pas tout le coût.** Au plafond de l'étape 2, un cœur sert 50 req/s, soit environ 20 ms de
+  CPU par requête. Or `X-Process-Time-Ms` mesure 8,2 ms, et la route seule 5,2 ms. Le reste, plus de la moitié,
+  part hors de la route : uvicorn, analyse du JSON, middleware, passage par le pool de threads, journal d'accès. Le
+  confirmer demanderait de profiler sous charge (par exemple avec `py-spy`).
+- **Une piste écartée par la mesure** : la bibliothèque OpenMP voit 16 threads dans un conteneur limité à un cœur.
+  Mais avec `OMP_NUM_THREADS=1`, `predict` coûte la même chose (2,1 ms de mur, 2,1 ms de CPU par appel). Elle ne
+  gaspille donc pas le quota.
+
+**Le goulot en une phrase :** avec 1 worker sur 1 cœur, l'API sature parce que son unique cœur est plein (98-100 %
+dès 100 usagers, étape 2) ; dans la route, `model.predict` en prend la plus grosse part (44 % du p50, coût fixe
+de 2 ms par appel quelle que soit la taille du lot), devant l'écriture synchrone en base (29 %).
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
