@@ -72,17 +72,40 @@ def main() -> int:
     for color, (name, rows) in zip(SERIES, configs.items(), strict=False):
         x = [r["usagers"] for r in rows]
         for ax, key in ((ax_debit, "debit"), (ax_p95, "p95")):
-            ax.plot(x, [r[key] for r in rows], color=color, linewidth=2, marker="o", markersize=7,
-                    markeredgecolor=SURFACE, markeredgewidth=2, label=name)
+            ax.plot(
+                x,
+                [r[key] for r in rows],
+                color=color,
+                linewidth=2,
+                marker="o",
+                markersize=7,
+                markeredgecolor=SURFACE,
+                markeredgewidth=2,
+                label=name,
+            )
             # Étiquette directe sur le dernier point seulement.
-            ax.annotate(name, (x[-1], rows[-1][key]), xytext=(6, 0), textcoords="offset points",
-                        va="center", color=INK, fontsize=9)
+            ax.annotate(
+                name,
+                (x[-1], rows[-1][key]),
+                xytext=(6, 0),
+                textcoords="offset points",
+                va="center",
+                color=INK,
+                fontsize=9,
+            )
 
     style(ax_debit, "Débit de /v1/predict", "req/s")
     style(ax_p95, "p95 de /v1/predict", "ms")
     ax_p95.axhline(SLO_P95_MS, color=INK_2, linewidth=1, linestyle=(0, (4, 3)))
-    ax_p95.annotate(f"SLO {SLO_P95_MS} ms", (0, SLO_P95_MS), xycoords=("axes fraction", "data"),
-                    xytext=(4, 4), textcoords="offset points", color=INK_2, fontsize=9)
+    ax_p95.annotate(
+        f"SLO {SLO_P95_MS} ms",
+        (0, SLO_P95_MS),
+        xycoords=("axes fraction", "data"),
+        xytext=(4, 4),
+        textcoords="offset points",
+        color=INK_2,
+        fontsize=9,
+    )
     if len(configs) > 1:
         ax_debit.legend(frameon=False, labelcolor=INK)
 

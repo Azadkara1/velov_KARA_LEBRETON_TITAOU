@@ -537,3 +537,43 @@ exercices/         démo pickle (S1)
 Chaque activité indique son mode : **sans IA**, **IA déclarée** ou **IA imposée**.
 En mode IA déclarée, ajoutez dans la description de vos commits ou de votre rendu :
 outil utilisé, ce que vous lui avez demandé, ce que vous avez vérifié ou corrigé.
+
+### Déclaration TP5 (mode IA déclarée)
+
+**Outil** : Claude Code (modèle Claude Opus 5.5), dans VS Code. Chaque étape lui a été demandée séparément, avec
+validation du plan avant toute modification. Le détail figure dans chaque message de commit de la branche `tp5`.
+
+**Ce qui a été généré :**
+
+| Élément | Fichiers |
+|---|---|
+| Fusion des fichiers du cours avec les nôtres | `pyproject.toml`, `docs/exigences.md` |
+| En-tête `X-Process-Time-Ms` et son test | `src/velov/api/main.py`, `tests/test_api.py` |
+| Lancement de Locust dans un conteneur, fins de ligne LF | `loadtest/bin/locust`, `.gitattributes` |
+| Courbes de saturation | `scripts/plot_saturation.py` |
+| Temps par étape de la route | `scripts/bench_predict.py` |
+| Configuration à deux workers | `compose.workers.yaml`, repris du cours |
+| Comparaison float32 et int8 | `scripts/bench_quantization.py` |
+| Rédaction | section Performance du README, section 8 du runbook |
+
+**Ce qui a été corrigé, et pourquoi :**
+
+- **`exigences.md` n'a pas été écrasé** par la version du cours, contrairement à ce que faisait le `git checkout`
+  de l'énoncé : nos libellés d'EX-10 à EX-12, plus précis, auraient été perdus. Seuls EX-13 à EX-18 et la convention
+  de mesure ont été ajoutés.
+- **Mot de passe de la base** : le volume PostgreSQL des TP précédents avait été initialisé avec un autre mot de
+  passe. Il a été aligné avec `ALTER USER`, plutôt qu'en effaçant le volume et ses données.
+- **`paliers.sh` ne pouvait pas tourner sous Git Bash** : avec `core.autocrlf=true`, il était extrait en CRLF. D'où
+  le `.gitattributes`.
+- **Le mode `--batch` de `bench_predict.py` plantait** : le DataFrame était construit à partir des requêtes brutes,
+  avec des horodatages en chaînes, sans passer par Pydantic comme le fait l'API. Corrigé.
+- **Une hypothèse de l'IA a été rejetée par la mesure** : la bibliothèque OpenMP qui gaspillerait le quota CPU en
+  appel séquentiel. Elle est restée dans le README comme piste écartée, pas comme cause.
+- **L'hypothèse OpenMP de l'étape 4 n'a pas été testée.** Elle est présentée comme non vérifiée.
+- **La CI a échoué** de l'étape 2 à TP5a sur `ruff format --check` : l'IA ne vérifiait que `ruff check`. Les trois
+  scripts ont été reformatés.
+- **Tous les chiffres du README ont été repris** des sorties de `summary.py`, de `docker_stats.txt` et des scripts,
+  et les ratios recalculés.
+
+**Non réalisé** : l'audit du test de charge écrit par une IA (Should, à faire sans assistant) et les Stretch (ONNX,
+stratégie de remplacement).

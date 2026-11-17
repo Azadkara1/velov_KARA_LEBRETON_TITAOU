@@ -67,8 +67,9 @@ def predict_all(model: torch.nn.Module, tokenizer, sentences: list[str], threads
     torch.set_num_threads(threads)  # la précision ne dépend pas du nombre de threads : on va plus vite
     preds = []
     for start in range(0, len(sentences), batch):
-        enc = tokenizer(sentences[start:start + batch], padding=True, truncation=True, max_length=SEQ_LEN,
-                        return_tensors="pt")
+        enc = tokenizer(
+            sentences[start : start + batch], padding=True, truncation=True, max_length=SEQ_LEN, return_tensors="pt"
+        )
         preds.append(model(**enc).logits.argmax(dim=-1).numpy())
     return np.concatenate(preds)
 
@@ -105,35 +106,46 @@ def main() -> int:
         preds = predict_all(model, tokenizer, sentences, args.threads_eval)
         reference = preds if reference is None else reference
         p50, p95 = latency_ms(model, one, args.n, args.warmup)
-        rows.append({
-            "variante": name,
-            "taille_mo": round(size_mb(model), 1),
-            "p50_ms": round(p50, 1),
-            "p95_ms": round(p95, 1),
-            "precision": round(float((preds == labels).mean()), 4),
-            "accord_float32": round(float((preds == reference).mean()), 4),
-            "desaccords": int((preds != reference).sum()),
-        })
+        rows.append(
+            {
+                "variante": name,
+                "taille_mo": round(size_mb(model), 1),
+                "p50_ms": round(p50, 1),
+                "p95_ms": round(p95, 1),
+                "precision": round(float((preds == labels).mean()), 4),
+                "accord_float32": round(float((preds == reference).mean()), 4),
+                "desaccords": int((preds != reference).sum()),
+            }
+        )
         print(f"{name} : fait", file=sys.stderr)
 
     protocole = {
         "date_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "machine": platform.processor() or platform.machine(),
         "python": platform.python_version(),
-        "torch": torch.__version__, "transformers": transformers.__version__, "torchao": torchao.__version__,
-        "modele": MODEL_ID, "donnees": f"{SST2_REPO} {SST2_FILE} ({len(sentences)} phrases)",
+        "torch": torch.__version__,
+        "transformers": transformers.__version__,
+        "torchao": torchao.__version__,
+        "modele": MODEL_ID,
+        "donnees": f"{SST2_REPO} {SST2_FILE} ({len(sentences)} phrases)",
         "latence": f"1 phrase de {SEQ_LEN} tokens, 1 thread, {args.warmup} échauffements puis {args.n} mesures",
     }
-    table = ["| variante | taille Mo | p50 ms | p95 ms | précision SST-2 | accord float32 | désaccords |",
-             "|---|---|---|---|---|---|---|"]
-    table += [f"| {r['variante']} | {r['taille_mo']} | {r['p50_ms']} | {r['p95_ms']} | {r['precision']:.2%} "
-              f"| {r['accord_float32']:.2%} | {r['desaccords']} |" for r in rows]
+    table = [
+        "| variante | taille Mo | p50 ms | p95 ms | précision SST-2 | accord float32 | désaccords |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    table += [
+        f"| {r['variante']} | {r['taille_mo']} | {r['p50_ms']} | {r['p95_ms']} | {r['precision']:.2%} "
+        f"| {r['accord_float32']:.2%} | {r['desaccords']} |"
+        for r in rows
+    ]
     print("\n".join(f"{k} : {v}" for k, v in protocole.items()) + "\n\n" + "\n".join(table))
 
     if args.out:
         args.out.mkdir(parents=True, exist_ok=True)
-        (args.out / "resultats.json").write_text(json.dumps({"protocole": protocole, "variantes": rows},
-                                                            ensure_ascii=False, indent=2), encoding="utf-8")
+        (args.out / "resultats.json").write_text(
+            json.dumps({"protocole": protocole, "variantes": rows}, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         (args.out / "tableau.md").write_text("\n".join(table) + "\n", encoding="utf-8")
     return 0
 

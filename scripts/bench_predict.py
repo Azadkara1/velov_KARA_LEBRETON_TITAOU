@@ -48,14 +48,16 @@ def random_payloads(n: int, seed: int = 42) -> list[dict]:
     for _ in range(n):
         sid = rng.randint(1, 20)
         instant = now - timedelta(minutes=rng.randint(0, 30 * 24 * 60))
-        payloads.append({
-            "station_id": sid,
-            "timestamp": instant.replace(second=0, microsecond=0).isoformat(),
-            "capacity": capacity[sid],
-            "bikes_available": rng.randint(0, capacity[sid]),
-            "temperature": round(min(max(rng.gauss(14, 7), -30), 50), 1),
-            "is_raining": rng.random() < 0.08,
-        })
+        payloads.append(
+            {
+                "station_id": sid,
+                "timestamp": instant.replace(second=0, microsecond=0).isoformat(),
+                "capacity": capacity[sid],
+                "bikes_available": rng.randint(0, capacity[sid]),
+                "temperature": round(min(max(rng.gauss(14, 7), -30), 50), 1),
+                "is_raining": rng.random() < 0.08,
+            }
+        )
     return payloads
 
 
@@ -79,15 +81,26 @@ def bench_steps(model, version: str, payloads: list[dict], warmup: int, pool) ->
         t4 = clock()
         target_timestamp = request.timestamp + timedelta(hours=1)
         predicted_bikes = min(max(prediction, 0.0), float(request.capacity))
-        PredictionResponse(station_id=request.station_id, target_timestamp=target_timestamp,
-                           predicted_bikes=predicted_bikes, model_version=version)
+        PredictionResponse(
+            station_id=request.station_id,
+            target_timestamp=target_timestamp,
+            predicted_bikes=predicted_bikes,
+            model_version=version,
+        )
         t5 = clock()
         if pool is not None:
-            db.record_prediction(pool, station_id=request.station_id, requested_at=datetime.now(UTC),
-                                 target_timestamp=target_timestamp, capacity=request.capacity,
-                                 bikes_available=request.bikes_available, temperature=request.temperature,
-                                 is_raining=request.is_raining, predicted_bikes=predicted_bikes,
-                                 model_version=BENCH_VERSION)
+            db.record_prediction(
+                pool,
+                station_id=request.station_id,
+                requested_at=datetime.now(UTC),
+                target_timestamp=target_timestamp,
+                capacity=request.capacity,
+                bikes_available=request.bikes_available,
+                temperature=request.temperature,
+                is_raining=request.is_raining,
+                predicted_bikes=predicted_bikes,
+                model_version=BENCH_VERSION,
+            )
         t6 = clock()
         if i < warmup:
             continue
