@@ -19,3 +19,7 @@ mlruns/
 # dbt
 dbt/velov/target/
 dbt/velov/logs/
+
+# Tests de charge : CSV et protocole versionnés comme preuve, journaux bruts exclus
+results/**/*.log
+results/**/*_exceptions.csv

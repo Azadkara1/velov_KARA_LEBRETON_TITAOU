@@ -1,0 +1,7 @@
+Échauffement (1m, non compté)
+Palier 10 usagers (2m)
+Palier 25 usagers (2m)
+Palier 50 usagers (2m)
+Palier 100 usagers (2m)
+Palier 150 usagers (2m)
+Résultats dans results/w1/ ; résumé : python loadtest/summary.py results/w1

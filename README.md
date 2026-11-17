@@ -288,6 +288,57 @@ locust -f loadtest/locustfile.py --host http://localhost:8000 --headless -u 10 -
 Cet essai a été fait sans échauffement et sur batterie. Les paliers de l'étape 2 se font sur secteur, après
 l'échauffement d'une minute de `paliers.sh`.
 
+### Courbe de saturation : 1 worker, 1 cœur (w1)
+
+Mesuré le 2026-11-17 de 11:18 à 11:30 UTC, sur secteur, commit `95e0520`. Échauffement de 1 min non compté,
+puis 2 min par palier. Les chiffres portent sur `POST /v1/predict` seul : la ligne « Aggregated » de Locust
+inclut `/health`, qui ne coûte rien.
+
+```bash
+./loadtest/paliers.sh http://localhost:8000 w1
+python loadtest/summary.py results/w1 --markdown
+# affinage entre le dernier palier conforme (25) et le premier en échec (50), de 11:36 à 11:46 UTC
+PALIERS="30 35 40 45" ./loadtest/paliers.sh http://localhost:8000 w1_fin
+python loadtest/summary.py results/w1_fin --markdown
+python scripts/plot_saturation.py w1=results/w1,results/w1_fin --out docs/perf/saturation_w1.png
+```
+
+| Usagers | Requêtes | Erreurs | Débit | p50 | p95 | p99 | SLO p95 ≤ 200 ms | CPU API | CPU Locust |
+|---|---|---|---|---|---|---|---|---|---|
+| 10 | 1 072 | 0 % | 9,0 req/s | 14 ms | 49 ms | 98 ms | ok | 5 à 10 % | 2 % |
+| 25 | 2 628 | 0 % | 22,0 req/s | 14 ms | 61 ms | 99 ms | ok | 15 à 30 % | 4 % |
+| 30 *(affinage)* | 3 136 | 0 % | 26,3 req/s | 15 ms | 76 ms | 160 ms | ok | 31 à 46 % | 4 à 5 % |
+| 35 *(affinage)* | 3 631 | 0 % | 30,4 req/s | 19 ms | 110 ms | 200 ms | ok | 32 à 52 % | 5 % |
+| **40** *(affinage)* | 4 192 | 0 % | **35,1 req/s** | 24 ms | **130 ms** | 240 ms | **ok** | 41 à 58 % | 5 % |
+| 45 *(affinage)* | 4 563 | 0 % | 38,2 req/s | 27 ms | 220 ms | 400 ms | **KO** | 58 à 64 % | 5 à 6 % |
+| 50 | 4 889 | 0 % | 40,9 req/s | 48 ms | 330 ms | 560 ms | **KO** | 67 à 74 % | 6 à 7 % |
+| 100 | 5 994 | 0 % | 50,2 req/s | 870 ms | 1 400 ms | 1 500 ms | **KO** | 98 à 99 % (67 % pendant la montée) | 5 à 7 % (27 % pendant la montée) |
+| 150 | 5 969 | 0 % | 50,0 req/s | 1 800 ms | 2 100 ms | 2 300 ms | **KO** | 99 à 100 % | 6 à 7 % |
+
+Le CPU vient de `docker stats --no-stream`, relevé toutes les 30 s environ pendant chaque palier
+(`results/w1/docker_stats.txt`) ; 100 % correspond à un cœur entier. Le p99 reste indicatif : moins de 10 000 requêtes
+par palier.
+
+![Débit et p95 de /v1/predict selon le nombre d'usagers, 1 worker sur 1 cœur](docs/perf/saturation_w1.png)
+
+**Lecture.**
+
+- **Capacité sous le SLO : environ 35 req/s** (40 usagers, p95 à 130 ms). La première série ne la situait
+  qu'entre 22 et 41 req/s ; les paliers d'affinage la resserrent entre 35 et 38 req/s, et le SLO casse à 45 usagers
+  (p95 à 220 ms).
+- **Le SLO casse avant que le cœur soit plein.** À 45 usagers, `docker stats` montre environ 60 % de CPU en moyenne,
+  mais les arrivées sont irrégulières : les rafales remplissent la file et font monter le p95.
+- **Le palier où tout bascule : 45 à 50 usagers.** Le débit plafonne ensuite à 50 req/s. De 100 à 150 usagers, il ne
+  bouge plus, alors que le p50 double (870 puis 1 800 ms) : les requêtes en plus attendent dans la file.
+- **Le goulot est le CPU de l'API** : il est à 98-100 % d'un cœur dès 100 usagers. Locust reste sous 10 % (un pic
+  à 27 % pendant la montée à 100 usagers), loin des 90 % : ce n'est pas lui qui limite la mesure.
+- **Coût par requête** : à 50 req/s pour un cœur plein, chaque prédiction coûte environ 20 ms de CPU.
+- **Comparaison au repère du cours** (environ 41 req/s sous le SLO, p95 à 220 ms à 100 usagers) : notre capacité,
+  35 req/s, est du même ordre, un peu en dessous. En revanche, au-delà du plafond, la latence monte bien plus haut
+  (1 400 ms à 100 usagers contre 220 ms).
+  Le réseau de Docker Desktop entre Locust et l'API en explique peut-être une partie ; l'étape 3 mesurera le temps
+  passé dans l'API pour le vérifier.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
