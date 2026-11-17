@@ -454,6 +454,57 @@ irrégulier de w2 (de 55 à 213 % au même palier), les 20 ms de CPU par requêt
 (étape 3), et l'absence d'écart à l'étape 3, où les appels étaient séquentiels. La prochaine modification à
 mesurer, seule, serait `OMP_NUM_THREADS=1` dans l'image.
 
+### TP5a : DistilBERT en float32 contre int8, le triplet mesuré
+
+Sur le poste, hors Docker : torch 2.15.0 (version CPU), transformers 5.23.0, torchao 0.18.0, Python 3.12.10.
+Modèle `distilbert-base-uncased-finetuned-sst-2-english`, données : les 872 phrases de validation de SST-2
+(`nyu-mll/glue`). Mesuré le 2026-11-17 à 13:44 UTC, sur secteur.
+
+```bash
+pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-quantization.txt
+python scripts/bench_quantization.py --out results/quantization
+```
+
+[scripts/bench_quantization.py](scripts/bench_quantization.py) mesure, pour chaque variante :
+
+- **la taille** du `state_dict` sérialisé par `torch.save` ;
+- **la latence** d'une phrase complétée à exactement 128 tokens, sur 1 thread (`torch.set_num_threads(1)`), en
+  `inference_mode` : 10 itérations d'échauffement non comptées, puis p50 et p95 sur 200 mesures ;
+- **la précision** sur les 872 phrases, et l'accord avec float32 sur ces mêmes phrases.
+
+| Variante | Taille | p50 | p95 | Précision SST-2 | Accord avec float32 | Désaccords |
+|---|---|---|---|---|---|---|
+| float32 | 267,9 Mo | 145,6 ms | 149,7 ms | 91,06 % | 100 % | 0 |
+| int8 torch.ao (`quantize_dynamic`) | 138,7 Mo | **44,2 ms** | 48,4 ms | 90,02 % | 95,76 % | 37 |
+| int8 torchao (`Int8DynamicActivationInt8WeightConfig`) | 138,9 Mo | 89,9 ms | 100,0 ms | **90,60 %** | **99,54 %** | 4 |
+
+Résultats bruts : `results/quantization/resultats.json`.
+
+**Lecture du triplet.**
+
+- **Coût (taille)** : les deux variantes int8 divisent la taille par 1,9, et non par 4. Seules les couches
+  `nn.Linear` passent en int8 ; les embeddings, environ 24 millions de paramètres, restent en float32.
+- **Latence** : torch.ao est **3,3 fois plus rapide** que float32 (44 contre 146 ms) ; torchao, 1,6 fois
+  (90 ms).
+- **Précision** : torch.ao perd 1,0 point (90,02 contre 91,06 %) et change la prédiction de 37 phrases sur 872
+  (4,2 %). torchao ne perd que 0,5 point et ne change que 4 phrases (0,5 %).
+- **Par rapport au repère du cours** (poids aléatoires : 268 Mo et 118 ms en float32, 139 Mo et 53 ms en int8
+  torch.ao) : les tailles sont identiques. Notre float32 est plus lent (146 ms) et notre int8 torch.ao plus rapide
+  (44 ms), ce qui dépend des noyaux int8 du processeur.
+
+**Conclusion.** Aucune variante ne gagne sur les trois axes :
+
+- **int8 torch.ao** donne la meilleure latence, mais au prix de la plus forte dérive : 4,2 % des prédictions
+  changent. De plus, torch 2.15 annonce que `quantize_dynamic` et les tenseurs `qint8` seront retirés : c'est un
+  coût de maintenance.
+- **int8 torchao** garde presque exactement le comportement de float32 (99,5 % d'accord), divise la taille par 1,9
+  et la latence par 1,6.
+
+Si la latence prime et qu'une perte d'un point de précision est acceptable, torch.ao est le meilleur choix
+immédiat. Sinon, torchao est le choix le plus sûr. Dans les deux cas, la mesure ne vaut que pour ce poste et une
+seule exécution : servir l'une ou l'autre demanderait un ADR (EX-17) et une nouvelle mesure sur la machine cible.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
