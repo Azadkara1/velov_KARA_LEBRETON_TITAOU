@@ -401,6 +401,59 @@ python scripts/bench_predict.py --n 500 --http http://localhost:8000      # clie
 dès 100 usagers, étape 2) ; dans la route, `model.predict` en prend la plus grosse part (44 % du p50, coût fixe
 de 2 ms par appel quelle que soit la taille du lot), devant l'écriture synchrone en base (29 %).
 
+### Une seule modification : 2 workers sur 2 cœurs (étape 4)
+
+La question : avec un worker et un cœur de plus, le débit double-t-il ? Seule la commande uvicorn change
+([compose.workers.yaml](compose.workers.yaml) : `--workers 2`), avec la limite CPU qui va avec. L'image, le modèle,
+la base, les paliers et la durée restent ceux de w1. Mesuré le 2026-11-17 de 13:06 à 13:28 UTC, sur secteur.
+
+```bash
+docker compose -f compose.yaml -f compose.workers.yaml up -d api
+docker update --cpus 2 $(docker compose ps -q api)
+./loadtest/paliers.sh http://localhost:8000 w2
+PALIERS="30 35 40 45" ./loadtest/paliers.sh http://localhost:8000 w2_fin
+python scripts/plot_saturation.py w1=results/w1,results/w1_fin w2=results/w2,results/w2_fin \
+  --out docs/perf/saturation_w1_w2.png
+```
+
+| Usagers | w1 débit | w1 p95 | w2 débit | w2 p95 | w1 CPU API | w2 CPU API |
+|---|---|---|---|---|---|---|
+| 10 | 9,0 req/s | 49 ms | 9,2 req/s | 37 ms | 5 à 10 % | 15 à 19 % |
+| 25 | 22,0 req/s | 61 ms | 22,0 req/s | 56 ms | 15 à 30 % | 35 à 66 % |
+| 30 | 26,3 req/s | 76 ms | 25,9 req/s | 72 ms | 31 à 46 % | 55 à 213 % |
+| 35 | 30,4 req/s | 110 ms | **30,5 req/s** | **100 ms** | 32 à 52 % | 57 à 98 % |
+| 40 | **35,1 req/s** | **130 ms** | 31,6 req/s | 1 100 ms | 41 à 58 % | 74 à 172 % |
+| 45 | 38,2 req/s | 220 ms | 32,8 req/s | 1 700 ms | 58 à 64 % | 70 à 210 % |
+| 50 | 40,9 req/s | 330 ms | 36,5 req/s | 1 600 ms | 67 à 74 % | 156 à 203 % |
+| 100 | 50,2 req/s | 1 400 ms | 39,1 req/s | 1 900 ms | 98 à 99 % | 199 à 202 % |
+| 150 | 50,0 req/s | 2 100 ms | 38,5 req/s | 3 200 ms | 99 à 100 % | 202 à 204 % |
+
+Aucune erreur dans les deux configurations. Le CPU vient de `docker stats` (100 % = un cœur) ; celui de Locust reste
+sous 9 % hors montée en charge (un pic à 27 % en w1) et celui de PostgreSQL sous 5 % (relevé en w2_fin).
+
+![Débit et p95 de /v1/predict, 1 worker sur 1 cœur contre 2 workers sur 2 cœurs](docs/perf/saturation_w1_w2.png)
+
+| | w1 : 1 worker, 1 cœur | w2 : 2 workers, 2 cœurs | Écart |
+|---|---|---|---|
+| Capacité sous le SLO | **35,1 req/s** (40 usagers) | **30,5 req/s** (35 usagers) | **−13 %** |
+| Plafond de débit | 50 req/s | 39 req/s | −22 % |
+| CPU par requête au plafond | environ 20 ms | environ 51 ms | ×2,5 |
+| Mémoire de l'API au repos | 152 Mo | 329 Mo | ×2,2 |
+| Mémoire au plafond | 154 Mo | 359 Mo | ×2,3 |
+
+**Conclusion : non, le débit ne double pas. Il baisse.** Avec deux fois plus de CPU, l'API sert 13 % de moins sous
+le SLO (30,5 contre 35,1 req/s) et plafonne 22 % plus bas (39 contre 50 req/s), pour une mémoire multipliée par 2,2.
+Chaque worker charge son propre modèle. Le CPU supplémentaire est bien consommé (200 % au plafond), mais chaque
+requête en coûte 2,5 fois plus. À ce stade, ajouter des workers n'est pas un levier de capacité : c'est une perte.
+
+**Hypothèse, non vérifiée.** FastAPI exécute la route dans un pool de threads : plusieurs `predict` tournent en même
+temps dans un worker. Or `predict` de scikit-learn ouvre une région parallèle OpenMP de 16 threads (le nombre de
+cœurs du poste, pas celui du conteneur). Des prédictions simultanées créeraient alors des dizaines de threads qui
+se disputent 1 ou 2 cœurs, et w2 doublerait le phénomène. Trois observations vont dans ce sens : le CPU très
+irrégulier de w2 (de 55 à 213 % au même palier), les 20 ms de CPU par requête en w1 contre 8 ms mesurés dans l'API
+(étape 3), et l'absence d'écart à l'étape 3, où les appels étaient séquentiels. La prochaine modification à
+mesurer, seule, serait `OMP_NUM_THREADS=1` dans l'image.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.

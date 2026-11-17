@@ -1,0 +1,68 @@
+## 13:18:22 
+velov_kara_lebreton_titaou-api-1 cpu=0.41% mem=353.7MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=3.11% mem=64.69MiB / 30.91GiB
+velov-locust-980 cpu=1.58% mem=45.06MiB / 30.91GiB
+## 13:18:56 Échauffement (1m, non compté)
+velov-locust-980 cpu=2.06% mem=45.82MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=18.43% mem=351.8MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=0.55% mem=61.36MiB / 30.91GiB
+## 13:19:29 Palier 30 usagers (2m)
+velov-locust-1023 cpu=3.73% mem=46.07MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=213.35% mem=353.6MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.47% mem=61.55MiB / 30.91GiB
+## 13:20:02 Palier 30 usagers (2m)
+velov-locust-1023 cpu=4.47% mem=45.72MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=57.76% mem=353MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.49% mem=61.96MiB / 30.91GiB
+## 13:20:35 Palier 30 usagers (2m)
+velov-locust-1023 cpu=5.02% mem=46.04MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=61.21% mem=352.5MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=4.07% mem=61.81MiB / 30.91GiB
+## 13:21:07 Palier 30 usagers (2m)
+velov-locust-1023 cpu=4.96% mem=45.94MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=54.92% mem=352.3MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.71% mem=61.68MiB / 30.91GiB
+## 13:21:39 Palier 35 usagers (2m)
+velov-locust-1116 cpu=5.34% mem=46.62MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=56.79% mem=352.1MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.64% mem=61.98MiB / 30.91GiB
+## 13:22:12 Palier 35 usagers (2m)
+velov-locust-1116 cpu=5.19% mem=46.45MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=73.16% mem=352.5MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.84% mem=61.68MiB / 30.91GiB
+## 13:22:45 Palier 35 usagers (2m)
+velov-locust-1116 cpu=5.34% mem=46.47MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=73.10% mem=353.3MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.60% mem=62.11MiB / 30.91GiB
+## 13:23:17 Palier 35 usagers (2m)
+velov-locust-1116 cpu=4.57% mem=46.41MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=98.40% mem=352.7MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.64% mem=62.12MiB / 30.91GiB
+## 13:23:50 Palier 40 usagers (2m)
+velov-locust-1209 cpu=5.59% mem=47.69MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=88.38% mem=354.4MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=2.37% mem=62.32MiB / 30.91GiB
+## 13:24:22 Palier 40 usagers (2m)
+velov-locust-1209 cpu=5.31% mem=48.28MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=74.18% mem=355.1MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=2.06% mem=62.9MiB / 30.91GiB
+## 13:24:55 Palier 40 usagers (2m)
+velov-locust-1209 cpu=5.24% mem=48.08MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=172.17% mem=354.6MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.41% mem=62.82MiB / 30.91GiB
+## 13:25:27 Palier 45 usagers (2m)
+velov_kara_lebreton_titaou-api-1 cpu=69.79% mem=355.1MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=0.76% mem=62.79MiB / 30.91GiB
+velov-locust-1296 cpu=2.94% mem=45.25MiB / 30.91GiB
+## 13:26:00 Palier 45 usagers (2m)
+velov-locust-1296 cpu=4.61% mem=48.22MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=209.61% mem=354MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=2.08% mem=62.38MiB / 30.91GiB
+## 13:26:32 Palier 45 usagers (2m)
+velov-locust-1296 cpu=3.37% mem=48.7MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=196.40% mem=355.3MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=4.34% mem=63.37MiB / 30.91GiB
+## 13:27:05 Palier 45 usagers (2m)
+velov-locust-1296 cpu=3.44% mem=48.57MiB / 30.91GiB
+velov_kara_lebreton_titaou-api-1 cpu=185.09% mem=356.1MiB / 30.91GiB
+velov_kara_lebreton_titaou-db-1 cpu=1.44% mem=63.22MiB / 30.91GiB
