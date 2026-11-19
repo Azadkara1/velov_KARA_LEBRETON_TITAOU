@@ -511,6 +511,27 @@ Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md
 Chaque rendu indique celles qu'il couvre et comment le vérifier.
 
 
+## Exploitation et monitoring (S6)
+
+Fournis pour le TP6 : `compose.monitoring.yaml` (proxy Nginx en HTTPS, Prometheus, Grafana),
+`docker/nginx/`, `docker/prometheus/`, `docker/grafana/provisioning/`, `scripts/make_cert.sh`,
+`src/velov/replay.py` et `requirements-monitoring.txt`. À écrire : l'instrumentation de l'API,
+les règles d'alerte, le tableau de bord et `src/velov/monitor.py`.
+
+```bash
+# sur la VM : certificat pour son adresse, puis la stack complète
+./scripts/make_cert.sh 192.168.1.2xx
+# dans .env : GRAFANA_ADMIN_PASSWORD=... et COMPOSE_FILE=compose.yaml:compose.mlflow.yaml:compose.monitoring.yaml
+docker compose up -d
+
+# depuis le poste : l'API n'est joignable qu'en HTTPS, avec le certificat de la VM
+curl -s --cacert certs/velov.crt https://192.168.1.2xx/ready
+
+# rejouer une semaine d'observations contre l'API (scénarios : normal, froid, demenagement)
+pip install -r requirements-monitoring.txt
+python -m velov.replay --url https://192.168.1.2xx --cacert certs/velov.crt --scenario normal
+```
+
 ## Structure
 
 ```

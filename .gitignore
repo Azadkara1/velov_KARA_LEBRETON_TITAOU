@@ -23,3 +23,7 @@ dbt/velov/logs/
 # Tests de charge : CSV et protocole versionnés comme preuve, journaux bruts exclus
 results/**/*.log
 results/**/*_exceptions.csv
+
+# Exploitation (S6) : la clé TLS ne quitte jamais la VM ; les rapports Evidently se régénèrent
+certs/
+reports/
