@@ -18,9 +18,29 @@
 ## 3. Vérifier que tout va bien
 | Vérification | Commande | Résultat attendu |
 |---|---|---|
-| Le process répond | `curl -s http://<hôte>:8000/health` | `{"status":"ok"}` |
-| Le modèle est chargé | `curl -s http://<hôte>:8000/ready` | HTTP 200 + version |
-| | | |
+| Le process répond | `curl -s --cacert certs/velov.crt https://<hôte>/health` | `{"status":"ok"}` |
+| Le modèle est chargé | `curl -s --cacert certs/velov.crt https://<hôte>/ready` | HTTP 200 + version |
+
+### Le proxy HTTPS (S6)
+Depuis S6, l'API n'est joignable que par le proxy Nginx (ports 80 et 443). Le port 8000 n'est plus publié.
+Le client a besoin de `certs/velov.crt` (certificat public, à récupérer sur la VM). La clé `certs/velov.key`
+ne quitte pas la VM. `certs/` est dans `.gitignore`. Sous Windows PowerShell, utiliser `curl.exe`.
+
+| # | Vérification | Commande (depuis le poste, `VM=192.168.1.231`) | Attendu |
+|---|---|---|---|
+| 1 | HTTP redirigé vers HTTPS | `curl -s -o /dev/null -w "%{http_code}" http://$VM/ready` | `301` |
+| 2 | Certificat inconnu refusé | `curl -s https://$VM/ready; echo $?` | code de sortie `60` |
+| 3 | HTTPS avec le certificat | `curl -s --cacert certs/velov.crt https://$VM/ready` | `200` + `{"status":"ready",...}` |
+| 4 | Métriques non exposées | `curl -s -o /dev/null -w "%{http_code}" --cacert certs/velov.crt https://$VM/metrics` | `404` |
+| 5 | API arrêtée (`docker compose stop api`) | appel 3 | `502` |
+| - | Port 8000 fermé | `curl -s -m 5 http://$VM:8000/ready; echo $?` | code de sortie `7` (connexion refusée) |
+
+Pour l'appel 5, attendre une dizaine de secondes après l'arrêt : Nginx garde l'adresse de l'API 10 s en cache DNS
+(`resolver ... valid=10s`). Pendant ce délai, il peut répondre `504` au lieu de `502`. Relancer ensuite avec
+`docker compose start api` et attendre que `/ready` revienne à 200 (quelques secondes : 502 tant que l'API démarre).
+
+Certificat : `./scripts/make_cert.sh <ip-de-la-vm>` sur la VM, valable 90 jours. Le régénérer avant expiration
+(`openssl x509 -in certs/velov.crt -noout -enddate`), puis `docker compose restart proxy`.
 
 ## 4. Incidents connus
 | Symptôme | Cause probable | Diagnostic | Action |
